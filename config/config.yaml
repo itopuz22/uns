@@ -1,0 +1,283 @@
+# Industrial Quality Control System Configuration
+# Raspberry Pi 5 + AI HAT + HQ Camera (Sony IMX477 12.3MP)
+
+# =============================================================================
+# SYSTEM IDENTIFICATION
+# =============================================================================
+system:
+  name: "Assembly Line Quality Control"
+  version: "2.0.0"
+  station_id: "A10_AI"
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# =============================================================================
+# RASPBERRY PI HQ CAMERA CONFIGURATION (Sony IMX477 12.3MP)
+# =============================================================================
+camera:
+  # Resolution options for HQ Camera:
+  # - full: 4056x3040 (12.3MP, best quality, slower)
+  # - high: 2028x1520 (3MP, balanced)
+  # - medium: 1920x1080 (2MP, fast, good for real-time)
+  # - preview: 1280x720 (0.9MP, fastest)
+  resolution:
+    capture_width: 2028
+    capture_height: 1520
+    preview_width: 640
+    preview_height: 480
+
+  # Sensor configuration for industrial environment
+  exposure:
+    mode: "manual"  # auto, manual
+    exposure_time_us: 10000  # Microseconds (10ms default)
+    analogue_gain: 1.0  # 1.0 - 16.0
+
+  # Focus configuration (HQ Camera has manual focus ring)
+  focus:
+    lens_position: 0.0  # For motorized lenses (0.0 = infinity)
+    # Note: HQ Camera uses manual focus ring - document physical position
+
+  # White balance for consistent color under industrial lighting
+  white_balance:
+    mode: "manual"  # auto, manual
+    red_gain: 1.5
+    blue_gain: 1.5
+
+  # Image quality settings
+  quality:
+    jpeg_quality: 95  # 1-100
+    denoise_mode: "off"  # off, cdn, fast
+
+  # Camera stabilization
+  warmup_time_seconds: 2.0
+  reconnect_attempts: 3
+  reconnect_delay_seconds: 5.0
+
+# =============================================================================
+# GPIO CONFIGURATION (Raspberry Pi 5 - gpiod)
+# =============================================================================
+gpio:
+  chip: "gpiochip4"
+
+  # Input trigger
+  input:
+    trigger_pin: 17
+    debounce_ms: 50
+    bias: "pull_down"  # pull_up, pull_down, none
+    active_state: "high"  # Trigger on HIGH signal
+
+  # Relay outputs (active LOW - 0=ON, 1=OFF)
+  relays:
+    k1_ok:
+      pin: 26
+      description: "OK Signal Relay"
+      pulse_duration_ms: 1000
+    k2_light:
+      pin: 20
+      description: "Inspection Light Relay"
+      pre_capture_delay_ms: 500
+    k3_nok:
+      pin: 21
+      description: "NOK Signal Relay"
+      pulse_duration_ms: 3000
+
+  # Safety settings
+  safety:
+    interlock_enabled: true  # Prevent K1 and K3 simultaneous activation
+    max_relay_on_time_ms: 10000  # Force off after this time
+    stuck_relay_detection: true
+
+# =============================================================================
+# AI MODEL CONFIGURATION (Unsupervised Anomaly Detection)
+# =============================================================================
+model:
+  # Model type options:
+  # - autoencoder: Convolutional autoencoder with reconstruction loss
+  # - vae: Variational autoencoder
+  # - isolation_forest: Isolation Forest on image features
+  # - one_class_svm: One-Class SVM on image features
+  type: "autoencoder"
+
+  # Model file paths (relative to models/ directory)
+  paths:
+    tflite_model: "anomaly_detector.tflite"
+    onnx_model: "anomaly_detector.onnx"
+    scaler: "feature_scaler.pkl"
+    threshold: "anomaly_threshold.json"
+
+  # Inference settings
+  inference:
+    input_size: [224, 224]  # Model input dimensions
+    batch_size: 1
+    use_ai_hat: true  # Use Raspberry Pi AI HAT for acceleration
+    num_threads: 4  # Fallback CPU threads
+
+  # Anomaly detection thresholds
+  thresholds:
+    reconstruction_error: 0.05  # Autoencoder threshold
+    anomaly_score: -0.5  # Isolation Forest / One-Class SVM
+    confidence_margin: 0.1  # Margin for borderline cases
+
+  # Classification behavior
+  classification:
+    borderline_action: "NOK"  # OK, NOK, or MANUAL_REVIEW
+    error_action: "NOK"  # What to do on model error
+
+# =============================================================================
+# TRAINING CONFIGURATION (Windows PC)
+# =============================================================================
+training:
+  # Dataset configuration
+  dataset:
+    good_samples_dir: "data/good"
+    augmentation:
+      enabled: true
+      rotation_range: 15
+      width_shift_range: 0.1
+      height_shift_range: 0.1
+      horizontal_flip: false  # Usually not for industrial parts
+      brightness_range: [0.8, 1.2]
+
+  # Autoencoder architecture
+  autoencoder:
+    latent_dim: 128
+    encoder_filters: [32, 64, 128, 256]
+    decoder_filters: [256, 128, 64, 32]
+    activation: "relu"
+    dropout_rate: 0.2
+
+  # Training parameters
+  parameters:
+    epochs: 100
+    batch_size: 32
+    learning_rate: 0.001
+    early_stopping_patience: 10
+    validation_split: 0.2
+
+  # Model optimization for Raspberry Pi
+  optimization:
+    quantization: "int8"  # none, float16, int8
+    pruning_enabled: false
+    target_size_mb: 10
+
+# =============================================================================
+# FTP CONFIGURATION
+# =============================================================================
+ftp:
+  server: "10.5.191.182"
+  port: 21
+  username: "PROD"
+  password: "elopkcats321!"
+
+  # Upload settings
+  base_directory: "/A10_AI"
+  date_folder_format: "%d%m%y"  # DDMMYY
+
+  # Upload behavior
+  upload:
+    async_enabled: true
+    retry_attempts: 3
+    retry_delay_seconds: 2.0
+    timeout_seconds: 30
+    upload_original: true
+    upload_annotated: true
+    compress_before_upload: false
+
+  # Connection pooling
+  connection:
+    pool_size: 2
+    keep_alive: true
+    reconnect_on_failure: true
+
+# =============================================================================
+# DASHBOARD CONFIGURATION
+# =============================================================================
+dashboard:
+  server:
+    host: "0.0.0.0"
+    port: 8080
+    debug: false
+
+  # Display settings
+  display:
+    refresh_rate_ms: 500
+    image_preview_size: [640, 480]
+    show_heatmap: true  # Show reconstruction error heatmap
+    show_metrics: true
+
+  # Statistics retention
+  statistics:
+    rolling_window_size: 100
+    persist_to_disk: true
+    export_format: "csv"
+
+# =============================================================================
+# INTER-PROCESS COMMUNICATION (IPC)
+# =============================================================================
+ipc:
+  directory: "/home/ai2/yolo_ipc"
+  request_prefix: "request_"
+  result_prefix: "result_"
+  timeout_seconds: 120
+  cleanup_old_files: true
+  max_file_age_seconds: 300
+
+# =============================================================================
+# LOGGING AND MONITORING
+# =============================================================================
+logging:
+  # File logging
+  file:
+    enabled: true
+    directory: "/var/log/qc_system"
+    max_size_mb: 10
+    backup_count: 5
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+  # Console logging
+  console:
+    enabled: true
+    colorized: true
+
+  # Classification audit log
+  audit:
+    enabled: true
+    file: "/var/log/qc_system/classifications.csv"
+    fields: ["timestamp", "image_path", "result", "confidence", "processing_time_ms"]
+
+# =============================================================================
+# PERFORMANCE TUNING
+# =============================================================================
+performance:
+  # Memory management for high-resolution images
+  memory:
+    max_image_buffer_mb: 256
+    garbage_collection_threshold: 0.8
+    preload_model: true
+
+  # Processing optimization
+  processing:
+    use_multiprocessing: true
+    worker_processes: 2
+    queue_size: 10
+
+# =============================================================================
+# ERROR RECOVERY
+# =============================================================================
+recovery:
+  # Camera recovery
+  camera:
+    auto_reconnect: true
+    max_reconnect_attempts: 5
+    reconnect_interval_seconds: 10
+
+  # FTP recovery
+  ftp:
+    queue_failed_uploads: true
+    max_queue_size: 100
+    retry_interval_seconds: 60
+
+  # System recovery
+  system:
+    watchdog_enabled: true
+    watchdog_timeout_seconds: 300
+    auto_restart_on_crash: true

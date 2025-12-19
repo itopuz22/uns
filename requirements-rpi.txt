@@ -1,0 +1,22 @@
+# Requirements for Raspberry Pi 5 Deployment
+# Note: Some packages should be installed via apt for better performance
+
+# TensorFlow Lite runtime (lightweight, for inference only)
+tflite-runtime>=2.13.0
+
+# Web dashboard
+Flask>=2.3.0
+flask-cors>=4.0.0
+
+# Image processing (prefer opencv-python-headless for headless systems)
+opencv-python-headless>=4.8.0
+Pillow>=10.0.0
+
+# Data handling
+numpy>=1.24.0
+
+# Configuration
+PyYAML>=6.0
+
+# Note: These should be installed via apt for hardware support:
+# sudo apt install python3-picamera2 python3-gpiod
