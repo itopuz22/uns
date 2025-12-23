@@ -1,12 +1,9 @@
-# Requirements for Windows Training Environment
+# Requirements for Windows Training Environment (PatchCore/FAULTLESS)
 
-# Core ML frameworks
-tensorflow>=2.13.0
-
-# PyTorch for PatchCore (FAULTLESS)
+# PyTorch for PatchCore
 torch>=2.0.0
 torchvision>=0.15.0
-timm>=0.9.0  # PyTorch Image Models (for WideResNet50 backbone)
+timm>=0.9.0  # PyTorch Image Models (WideResNet50 backbone)
 
 # Image processing
 opencv-python>=4.8.0
@@ -22,9 +19,5 @@ PyYAML>=6.0
 # Visualization
 matplotlib>=3.7.0
 
-# Model export
-tf2onnx>=1.15.0
-onnx>=1.14.0
-
-# Optional: Progress bars
+# Progress bars
 tqdm>=4.65.0

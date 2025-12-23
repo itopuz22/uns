@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Industrial Quality Control Automation System
+Industrial Quality Control Automation System (PatchCore/FAULTLESS)
 
 Main automation script for Raspberry Pi 5 with AI HAT and HQ Camera.
-Performs real-time anomaly detection on assembly line products.
+Performs real-time anomaly detection using PatchCore algorithm.
 
-Based on the original automation.py patterns, enhanced with:
-- Unsupervised anomaly detection model integration
+Features:
+- PatchCore-based anomaly detection with WideResNet50 backbone
 - Raspberry Pi HQ Camera optimization
 - Real-time dashboard support
 - Comprehensive error handling
@@ -48,11 +48,11 @@ shutdown_event = threading.Event()
 
 class QualityControlSystem:
     """
-    Main quality control automation system.
+    Main quality control automation system using PatchCore.
 
     Coordinates:
     - Camera capture
-    - AI-based anomaly detection
+    - PatchCore anomaly detection
     - Relay control for OK/NOK signals
     - FTP image upload
     - Dashboard updates
@@ -91,7 +91,7 @@ class QualityControlSystem:
                 audit_config.get('file', '/var/log/qc_system/classifications.csv'),
                 audit_config.get('fields', [
                     'timestamp', 'image_path', 'result',
-                    'confidence', 'processing_time_ms'
+                    'confidence', 'anomaly_score', 'processing_time_ms'
                 ])
             )
         else:
@@ -111,7 +111,7 @@ class QualityControlSystem:
             'last_inspection': None
         }
 
-        logger.info("Quality Control System initialized")
+        logger.info("Quality Control System (PatchCore) initialized")
 
     def initialize(self) -> bool:
         """
@@ -154,7 +154,7 @@ class QualityControlSystem:
         except Exception as e:
             logger.warning(f"FTP setup error: {e}")
 
-        # Initialize inference engine (if using local model)
+        # Initialize PatchCore inference engine
         self._init_inference_engine()
 
         self.stats['start_time'] = datetime.now()
@@ -162,43 +162,36 @@ class QualityControlSystem:
         return True
 
     def _init_inference_engine(self) -> None:
-        """Initialize AI inference engine (supports autoencoder and PatchCore)."""
+        """Initialize PatchCore inference engine."""
         try:
             from inference.anomaly_detector import create_detector
 
             model_config = self.config.model
-            model_type = model_config.get('type', 'autoencoder')
+            patchcore_config = model_config.get('patchcore', {})
 
-            # Determine model path based on type
-            if model_type == 'patchcore':
-                model_path = Path('models') / model_config.get('paths', {}).get(
-                    'patchcore_model', 'patchcore_model.pth'
-                )
-                threshold_path = Path('models') / model_config.get('paths', {}).get(
-                    'patchcore_threshold', 'patchcore_threshold.json'
-                )
-            else:
-                model_path = Path('models') / model_config.get('paths', {}).get(
-                    'tflite_model', 'anomaly_detector.tflite'
-                )
-                threshold_path = Path('models') / 'anomaly_threshold.json'
+            # Get model path
+            model_path = Path('models') / model_config.get('paths', {}).get(
+                'patchcore_model', 'patchcore_model.pth'
+            )
+            threshold_path = Path('models') / model_config.get('paths', {}).get(
+                'patchcore_threshold', 'patchcore_threshold.json'
+            )
 
             if model_path.exists():
                 self.inference_engine = create_detector(
                     model_path=str(model_path),
                     threshold_path=str(threshold_path) if threshold_path.exists() else None,
-                    model_type=model_type,
-                    use_ai_hat=model_config.get('inference', {}).get('use_ai_hat', True),
                     use_gpu=model_config.get('inference', {}).get('use_gpu', True)
                 )
-                logger.info(f"Local inference engine initialized ({model_type})")
+                logger.info(f"PatchCore inference engine initialized: {model_path}")
             else:
-                logger.info(f"No local model found at {model_path} - using IPC-based inference")
+                logger.warning(f"No model found at {model_path} - using IPC-based inference")
 
         except ImportError as e:
-            logger.info(f"Inference module not available - using IPC-based inference: {e}")
+            logger.warning(f"PatchCore not available: {e}")
+            logger.info("Using IPC-based inference instead")
         except Exception as e:
-            logger.warning(f"Inference engine init error: {e}")
+            logger.error(f"Inference engine init error: {e}")
 
     def shutdown(self) -> None:
         """Shutdown all system components."""
