@@ -1,7 +1,12 @@
 # Requirements for Windows Training Environment
 
-# Core ML framework
+# Core ML frameworks
 tensorflow>=2.13.0
+
+# PyTorch for PatchCore (FAULTLESS)
+torch>=2.0.0
+torchvision>=0.15.0
+timm>=0.9.0  # PyTorch Image Models (for WideResNet50 backbone)
 
 # Image processing
 opencv-python>=4.8.0

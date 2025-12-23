@@ -92,28 +92,39 @@ gpio:
 model:
   # Model type options:
   # - autoencoder: Convolutional autoencoder with reconstruction loss
+  # - patchcore: PatchCore with WideResNet50 backbone (PyTorch)
   # - vae: Variational autoencoder
   # - isolation_forest: Isolation Forest on image features
   # - one_class_svm: One-Class SVM on image features
-  type: "autoencoder"
+  type: "patchcore"  # Changed to patchcore for FAULTLESS system
 
   # Model file paths (relative to models/ directory)
   paths:
+    # Autoencoder models
     tflite_model: "anomaly_detector.tflite"
     onnx_model: "anomaly_detector.onnx"
     scaler: "feature_scaler.pkl"
     threshold: "anomaly_threshold.json"
+    # PatchCore models
+    patchcore_model: "patchcore_model.pth"
+    patchcore_threshold: "patchcore_threshold.json"
+    backbone_weights: "Weights/AI_Faultless_weights_base.pth"
 
   # Inference settings
   inference:
-    input_size: [224, 224]  # Model input dimensions
+    input_size: [224, 224]  # Model input dimensions (autoencoder)
+    patchcore_input_size: [512, 512]  # PatchCore input dimensions
+    patchcore_resize_size: 544  # Resize before center crop
     batch_size: 1
-    use_ai_hat: true  # Use Raspberry Pi AI HAT for acceleration
+    use_ai_hat: true  # Use Raspberry Pi AI HAT for acceleration (autoencoder)
+    use_gpu: true  # Use GPU for PatchCore if available
     num_threads: 4  # Fallback CPU threads
+    generate_heatmap: true  # Generate anomaly heatmaps
 
   # Anomaly detection thresholds
   thresholds:
     reconstruction_error: 0.05  # Autoencoder threshold
+    patchcore_score: 0.0  # PatchCore default threshold (auto-computed during training)
     anomaly_score: -0.5  # Isolation Forest / One-Class SVM
     confidence_margin: 0.1  # Margin for borderline cases
 
@@ -121,6 +132,13 @@ model:
   classification:
     borderline_action: "NOK"  # OK, NOK, or MANUAL_REVIEW
     error_action: "NOK"  # What to do on model error
+
+  # PatchCore specific settings
+  patchcore:
+    f_coreset: 0.1  # Coreset fraction (0.1 = 10% of patches)
+    coreset_eps: 0.90  # Epsilon for random projection
+    n_reweight: 3  # Number of neighbors for reweighting
+    backbone: "wideresnet50"  # Backbone architecture
 
 # =============================================================================
 # TRAINING CONFIGURATION (Windows PC)
