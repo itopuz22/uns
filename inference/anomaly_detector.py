@@ -2,15 +2,19 @@
 """
 Anomaly Detection Inference Engine for Raspberry Pi
 
-Optimized for Raspberry Pi 5 with AI HAT:
-- TensorFlow Lite runtime with hardware acceleration
-- Efficient image preprocessing
-- Real-time anomaly scoring
+Supports multiple detection methods:
+- Autoencoder (TensorFlow Lite with AI HAT acceleration)
+- PatchCore (PyTorch with WideResNet50 backbone)
 
 Usage:
-    from inference.anomaly_detector import AnomalyDetector
+    from inference.anomaly_detector import AnomalyDetector, PatchCoreDetector
 
+    # Autoencoder-based detection
     detector = AnomalyDetector('model.tflite', 'threshold.json')
+    result = detector.detect('image.jpg')
+
+    # PatchCore-based detection
+    detector = PatchCoreDetector('patchcore_model.pth', 'threshold.json')
     result = detector.detect('image.jpg')
 """
 
@@ -29,6 +33,14 @@ from utils.image_utils import load_image, preprocess_image, compute_reconstructi
 from utils.logging_utils import get_logger
 
 logger = get_logger('anomaly_detector')
+
+# PatchCore support
+try:
+    from inference.faultless import PatchCoreDetector, PatchCore, load_model as load_patchcore_model
+    PATCHCORE_AVAILABLE = True
+except ImportError:
+    PATCHCORE_AVAILABLE = False
+    logger.info("PatchCore not available - install torch and timm for PatchCore support")
 
 # TensorFlow Lite runtime
 try:
@@ -552,6 +564,64 @@ def main():
     )
 
     daemon.run()
+
+
+def create_detector(
+    model_path: str,
+    threshold_path: Optional[str] = None,
+    model_type: str = "auto",
+    use_ai_hat: bool = True,
+    use_gpu: bool = True
+):
+    """
+    Factory function to create appropriate anomaly detector.
+
+    Args:
+        model_path: Path to model file
+        threshold_path: Path to threshold configuration
+        model_type: "autoencoder", "patchcore", or "auto" (detect from extension)
+        use_ai_hat: Use AI HAT acceleration for autoencoder
+        use_gpu: Use GPU for PatchCore
+
+    Returns:
+        Anomaly detector instance
+    """
+    if model_type == "auto":
+        # Detect model type from file extension
+        ext = Path(model_path).suffix.lower()
+        if ext in ['.pth', '.pt']:
+            model_type = "patchcore"
+        elif ext in ['.tflite', '.onnx']:
+            model_type = "autoencoder"
+        else:
+            # Default to autoencoder
+            model_type = "autoencoder"
+
+    if model_type == "patchcore":
+        if not PATCHCORE_AVAILABLE:
+            raise RuntimeError(
+                "PatchCore not available. Install dependencies: pip install torch torchvision timm"
+            )
+        logger.info("Creating PatchCore detector...")
+        return PatchCoreDetector(
+            model_path=model_path,
+            threshold_path=threshold_path,
+            use_gpu=use_gpu
+        )
+    else:
+        logger.info("Creating Autoencoder detector...")
+        return AnomalyDetector(
+            model_path=model_path,
+            threshold_path=threshold_path,
+            use_ai_hat=use_ai_hat
+        )
+
+
+# Export PatchCoreDetector if available
+if PATCHCORE_AVAILABLE:
+    __all__ = ['AnomalyDetector', 'AnomalyDetectorDaemon', 'PatchCoreDetector', 'create_detector']
+else:
+    __all__ = ['AnomalyDetector', 'AnomalyDetectorDaemon', 'create_detector']
 
 
 if __name__ == '__main__':

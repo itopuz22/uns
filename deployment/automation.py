@@ -162,27 +162,41 @@ class QualityControlSystem:
         return True
 
     def _init_inference_engine(self) -> None:
-        """Initialize AI inference engine."""
+        """Initialize AI inference engine (supports autoencoder and PatchCore)."""
         try:
-            from inference.anomaly_detector import AnomalyDetector
+            from inference.anomaly_detector import create_detector
 
             model_config = self.config.model
-            model_path = Path('models') / model_config.get('paths', {}).get(
-                'tflite_model', 'anomaly_detector.tflite'
-            )
+            model_type = model_config.get('type', 'autoencoder')
+
+            # Determine model path based on type
+            if model_type == 'patchcore':
+                model_path = Path('models') / model_config.get('paths', {}).get(
+                    'patchcore_model', 'patchcore_model.pth'
+                )
+                threshold_path = Path('models') / model_config.get('paths', {}).get(
+                    'patchcore_threshold', 'patchcore_threshold.json'
+                )
+            else:
+                model_path = Path('models') / model_config.get('paths', {}).get(
+                    'tflite_model', 'anomaly_detector.tflite'
+                )
+                threshold_path = Path('models') / 'anomaly_threshold.json'
 
             if model_path.exists():
-                self.inference_engine = AnomalyDetector(
+                self.inference_engine = create_detector(
                     model_path=str(model_path),
-                    threshold_path=str(model_path.parent / 'anomaly_threshold.json'),
-                    use_ai_hat=model_config.get('inference', {}).get('use_ai_hat', True)
+                    threshold_path=str(threshold_path) if threshold_path.exists() else None,
+                    model_type=model_type,
+                    use_ai_hat=model_config.get('inference', {}).get('use_ai_hat', True),
+                    use_gpu=model_config.get('inference', {}).get('use_gpu', True)
                 )
-                logger.info("Local inference engine initialized")
+                logger.info(f"Local inference engine initialized ({model_type})")
             else:
-                logger.info("No local model found - using IPC-based inference")
+                logger.info(f"No local model found at {model_path} - using IPC-based inference")
 
-        except ImportError:
-            logger.info("Inference module not available - using IPC-based inference")
+        except ImportError as e:
+            logger.info(f"Inference module not available - using IPC-based inference: {e}")
         except Exception as e:
             logger.warning(f"Inference engine init error: {e}")
 

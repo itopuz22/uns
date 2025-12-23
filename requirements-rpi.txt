@@ -1,8 +1,14 @@
 # Requirements for Raspberry Pi 5 Deployment
 # Note: Some packages should be installed via apt for better performance
 
-# TensorFlow Lite runtime (lightweight, for inference only)
+# TensorFlow Lite runtime (lightweight, for autoencoder inference)
 tflite-runtime>=2.13.0
+
+# PyTorch for PatchCore (FAULTLESS) - use CPU version for RPi
+# Install with: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+torch>=2.0.0
+torchvision>=0.15.0
+timm>=0.9.0  # PyTorch Image Models (for WideResNet50 backbone)
 
 # Web dashboard
 Flask>=2.3.0
@@ -14,9 +20,13 @@ Pillow>=10.0.0
 
 # Data handling
 numpy>=1.24.0
+scikit-learn>=1.3.0
 
 # Configuration
 PyYAML>=6.0
+
+# Visualization (for heatmaps)
+matplotlib>=3.7.0
 
 # Note: These should be installed via apt for hardware support:
 # sudo apt install python3-picamera2 python3-gpiod
