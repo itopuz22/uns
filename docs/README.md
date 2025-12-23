@@ -1,15 +1,15 @@
-# Industrial Quality Control System
+# Industrial Quality Control System (PatchCore/FAULTLESS)
 
-A complete unsupervised anomaly detection system for assembly line quality inspection using Raspberry Pi 5 with AI HAT and HQ Camera.
+A complete unsupervised anomaly detection system for assembly line quality inspection using PatchCore algorithm with WideResNet50 backbone.
 
 ## System Overview
 
 This system provides autonomous real-time quality inspection on assembly lines with:
 
-- **Unsupervised Anomaly Detection**: Autoencoder-based model that learns from "good" samples only
+- **PatchCore Anomaly Detection**: State-of-the-art unsupervised method using memory bank and coreset sampling
+- **WideResNet50 Backbone**: Pre-trained feature extractor for robust representation
 - **Raspberry Pi HQ Camera**: 12.3 megapixel Sony IMX477 sensor with superior image quality
-- **AI HAT Acceleration**: Hardware-accelerated inference on Raspberry Pi 5
-- **Real-time Dashboard**: Web-based visualization of inspection results
+- **Real-time Dashboard**: Web-based visualization of inspection results with heatmaps
 - **Relay Control**: Physical OK/NOK signaling for production line integration
 - **FTP Image Archival**: Automatic upload of inspection images
 
@@ -19,16 +19,17 @@ This system provides autonomous real-time quality inspection on assembly lines w
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Windows Training PC                          │
 │  ┌─────────────┐  ┌──────────────┐  ┌─────────────────────┐    │
-│  │ Good Images │──│ Train Model  │──│ Export TFLite/ONNX  │    │
+│  │ Good Images │──│ PatchCore    │──│ Save Model (.pth)   │    │
+│  │             │  │ Training     │  │ + Threshold         │    │
 │  └─────────────┘  └──────────────┘  └─────────────────────┘    │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼ Deploy Model
 ┌─────────────────────────────────────────────────────────────────┐
-│                  Raspberry Pi 5 + AI HAT                        │
+│                  Raspberry Pi 5 (CPU Inference)                 │
 │                                                                 │
 │  ┌──────────┐   ┌──────────────┐   ┌───────────────────┐       │
-│  │ HQ Camera│──▶│ Capture Image│──▶│ Anomaly Detection │       │
+│  │ HQ Camera│──▶│ Capture Image│──▶│ PatchCore Detect  │       │
 │  └──────────┘   └──────────────┘   └───────────────────┘       │
 │                                             │                   │
 │                    ┌────────────────────────┼──────────┐       │
@@ -46,12 +47,10 @@ This system provides autonomous real-time quality inspection on assembly lines w
 uns/
 ├── config/                 # Configuration files
 │   ├── __init__.py
-│   └── config.yaml        # Main configuration
+│   └── config.yaml        # Main configuration (PatchCore settings)
 ├── training/              # Windows training scripts
 │   ├── __init__.py
-│   ├── data_loader.py     # Dataset loading and augmentation
-│   ├── train_autoencoder.py  # Model training
-│   └── export_model.py    # Model export and optimization
+│   └── train_patchcore.py # PatchCore model training
 ├── deployment/            # Raspberry Pi deployment
 │   ├── __init__.py
 │   ├── automation.py      # Main automation script
@@ -60,7 +59,8 @@ uns/
 │   └── ftp_uploader.py    # Async FTP upload
 ├── inference/             # AI inference engine
 │   ├── __init__.py
-│   └── anomaly_detector.py  # TFLite inference with AI HAT
+│   ├── faultless.py       # PatchCore implementation
+│   └── anomaly_detector.py  # Detection wrapper
 ├── dashboard/             # Web dashboard
 │   ├── __init__.py
 │   └── app.py
@@ -70,33 +70,45 @@ uns/
 │   └── image_utils.py
 ├── models/                # Trained models (deploy here)
 ├── docs/                  # Documentation
+├── test.py                # Model testing script
 └── tests/                 # Test scripts
 ```
 
 ## Quick Start
 
-### 1. Training (Windows PC)
+### 1. Training (Windows PC with GPU)
 
 ```bash
 # Install dependencies
-pip install tensorflow opencv-python numpy pillow pyyaml
+pip install -r requirements-windows.txt
+# Or manually:
+pip install torch torchvision timm opencv-python numpy pillow pyyaml scikit-learn matplotlib
 
-# Prepare dataset
-# Place "good" product images in: data/good/
+# Prepare dataset structure:
+# Training/
+# └── <class_name>/
+#     ├── train/
+#     │   └── good/
+#     │       ├── image1.png
+#     │       └── image2.png
+#     └── test/
+#         ├── good/
+#         │   └── normal_images...
+#         └── defect/
+#             └── anomaly_images...
 
 # Train model
-python -m training.train_autoencoder \
-    --data_dir ./data \
-    --output_dir ./models \
-    --epochs 100 \
-    --batch_size 32
+python training/train_patchcore.py \
+    --class bottle \
+    --data ./Training \
+    --output ./models \
+    --f-coreset 0.1
 
-# Export for Raspberry Pi
-python -m training.export_model \
-    --model_dir ./models \
-    --output_dir ./models/exported \
-    --quantization int8 \
-    --calibration_dir ./data
+# Test model
+python test.py \
+    --model models/patchcore_bottle.pth \
+    --test_dir ./test_images \
+    --save_heatmaps
 ```
 
 ### 2. Deployment (Raspberry Pi 5)
@@ -106,26 +118,47 @@ python -m training.export_model \
 sudo apt update
 sudo apt install python3-pip python3-picamera2 python3-gpiod
 
-# Install Python dependencies
-pip3 install tflite-runtime flask flask-cors numpy opencv-python-headless pyyaml
+# Install Python dependencies (CPU version of PyTorch)
+pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip3 install timm flask flask-cors numpy opencv-python-headless pyyaml scikit-learn matplotlib
 
-# Copy model and config to Raspberry Pi
-# Place in: /home/pi/qc_system/models/
+# Copy model to Raspberry Pi
+# Place in: /home/pi/qc_system/models/patchcore_model.pth
 
 # Run system
-python3 -m deployment.automation --config config/config.yaml
+python3 deployment/automation.py --config config/config.yaml
 ```
 
 ### 3. Access Dashboard
 
 Open browser: `http://<raspberry-pi-ip>:8080`
 
+## PatchCore Algorithm
+
+PatchCore is a state-of-the-art unsupervised anomaly detection method:
+
+1. **Feature Extraction**: Uses WideResNet50 pre-trained on ImageNet to extract deep features
+2. **Memory Bank**: Stores representative feature patches from training images
+3. **Coreset Sampling**: Reduces memory bank size while maintaining coverage (default 10%)
+4. **Anomaly Scoring**: Computes distance to nearest neighbor in memory bank
+5. **Heatmap Generation**: Visualizes anomaly locations in the image
+
+### Key Parameters
+
+```yaml
+model:
+  patchcore:
+    f_coreset: 0.1      # Keep 10% of patches (smaller = faster, less accurate)
+    coreset_eps: 0.90   # Random projection epsilon
+    n_reweight: 3       # Neighbors for score reweighting
+    backbone: "wideresnet50"
+```
+
 ## Hardware Requirements
 
 ### Raspberry Pi Setup
 
 - **Raspberry Pi 5** (8GB recommended)
-- **Raspberry Pi AI HAT** (Hailo-8L for accelerated inference)
 - **Raspberry Pi HQ Camera** (Sony IMX477 12.3MP sensor)
 - **C-mount or CS-mount lens** (12mm recommended for typical inspection)
 - **Relay board** (3-channel, optocoupler isolated)
@@ -150,27 +183,36 @@ Note: Relays are active-LOW (0=ON, 1=OFF)
 
 Edit `config/config.yaml` to customize:
 
-- Camera resolution and exposure settings
-- GPIO pin assignments
-- Anomaly detection thresholds
-- FTP server credentials
-- Dashboard settings
-
-Key configuration options:
-
 ```yaml
+# PatchCore model settings
+model:
+  paths:
+    patchcore_model: "patchcore_model.pth"
+    patchcore_threshold: "patchcore_threshold.json"
+
+  inference:
+    input_size: [512, 512]
+    use_gpu: true  # false for Raspberry Pi
+    generate_heatmap: true
+
+  thresholds:
+    anomaly_score: 0.0  # Auto-computed during training
+
+  patchcore:
+    f_coreset: 0.1
+    coreset_eps: 0.90
+    backbone: "wideresnet50"
+
+# Camera settings
 camera:
   resolution:
-    capture_width: 2028   # Half resolution for speed
+    capture_width: 2028
     capture_height: 1520
   exposure:
     mode: manual
     exposure_time_us: 10000
 
-model:
-  thresholds:
-    reconstruction_error: 0.05  # Adjust based on validation
-
+# GPIO relay settings
 gpio:
   relays:
     k1_ok:
@@ -179,44 +221,11 @@ gpio:
       pulse_duration_ms: 3000
 ```
 
-## Camera Calibration
-
-### Focus Adjustment (Manual)
-
-1. Place a reference product at the inspection position
-2. Rotate the HQ Camera focus ring until image is sharp
-3. Lock the focus ring position with the locking screw
-
-### Exposure Tuning
-
-1. Start with auto exposure: `camera.set_exposure(auto=True)`
-2. Capture sample images and note the auto values
-3. Switch to manual with optimal values:
-   ```python
-   camera.set_exposure(
-       exposure_time_us=10000,  # 10ms
-       gain=1.0,
-       auto=False
-   )
-   ```
-
-### White Balance
-
-For consistent color under industrial lighting:
-
-```python
-camera.set_white_balance(
-    red_gain=1.5,
-    blue_gain=1.5,
-    auto=False
-)
-```
-
 ## Training Best Practices
 
 ### Data Collection
 
-1. Collect 500+ images of "good" products
+1. Collect 100-500 images of "good" products
 2. Include variations in:
    - Slight position differences
    - Minor lighting changes
@@ -225,20 +234,59 @@ camera.set_white_balance(
 
 ### Model Tuning
 
-1. Start with default hyperparameters
-2. Monitor validation loss during training
-3. Adjust threshold based on false positive/negative rates:
-   - Higher threshold: Fewer false NOK (may miss defects)
-   - Lower threshold: Fewer false OK (more false alarms)
+1. Start with `f_coreset=0.1` (10% of patches)
+2. For better accuracy, increase to `0.25` or higher
+3. After training, optimal threshold is computed automatically
+4. Test with both good and defective samples
 
-### Validation
+### Threshold Adjustment
 
-Before production deployment:
+The training script computes optimal threshold using ROC analysis:
+- **Higher threshold**: Fewer false NOK (may miss defects)
+- **Lower threshold**: Fewer false OK (more false alarms)
 
-1. Test with known good samples (expect OK)
-2. Test with known defective samples (expect NOK)
-3. Calculate precision and recall
-4. Adjust threshold to meet production requirements
+## Python API
+
+```python
+from inference.anomaly_detector import AnomalyDetector, create_model, load_model
+
+# For inference
+detector = AnomalyDetector('models/patchcore_model.pth', 'models/threshold.json')
+result = detector.detect('image.jpg')
+print(result)
+# {'is_normal': True, 'anomaly_score': 0.15, 'confidence': 0.85, ...}
+
+# For training
+from inference.faultless import create_model, train_model, MVTecDataset
+
+model = create_model(f_coreset=0.1, device="cuda")
+dataset = MVTecDataset("product", source="Training")
+train_loader, test_loader = dataset.get_dataloaders()
+train_model(model, train_loader)
+model.save("models/patchcore_product.pth")
+```
+
+## CLI Commands
+
+```bash
+# Train new model
+python training/train_patchcore.py --class product --data Training --output models
+
+# Test model on images
+python test.py --model models/patchcore_product.pth --test_dir test_images
+
+# Test with heatmap visualization
+python test.py --model models/patchcore_product.pth --test_dir test_images --save_heatmaps
+
+# Run automation system
+python deployment/automation.py --config config/config.yaml
+
+# Run single inspection
+python deployment/automation.py --config config/config.yaml --single
+
+# Run inference daemon
+python -m inference.anomaly_detector --model models/patchcore_model.pth
+```
 
 ## Systemd Service
 
@@ -246,14 +294,14 @@ Create `/etc/systemd/system/qc-system.service`:
 
 ```ini
 [Unit]
-Description=Quality Control System
+Description=Quality Control System (PatchCore)
 After=network.target
 
 [Service]
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/qc_system
-ExecStart=/usr/bin/python3 -m deployment.automation --config config/config.yaml
+ExecStart=/usr/bin/python3 deployment/automation.py --config config/config.yaml
 Restart=always
 RestartSec=10
 
@@ -270,6 +318,26 @@ sudo systemctl start qc-system
 
 ## Troubleshooting
 
+### PyTorch/CUDA Issues
+
+```bash
+# Check PyTorch installation
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
+
+# For Raspberry Pi, use CPU-only PyTorch
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+```
+
+### Model Loading Errors
+
+```bash
+# Ensure timm is installed
+pip install timm
+
+# Check model file exists
+ls -la models/patchcore_model.pth
+```
+
 ### Camera Not Found
 
 ```bash
@@ -280,55 +348,32 @@ libcamera-hello
 sudo usermod -aG video $USER
 ```
 
-### GPIO Permission Denied
+### Slow Inference
 
-```bash
-# Add user to gpio group
-sudo usermod -aG gpio $USER
-
-# Or use gpiod with proper permissions
-sudo chmod 666 /dev/gpiochip4
-```
-
-### Model Inference Slow
-
-1. Ensure AI HAT is properly installed
-2. Check for thermal throttling: `vcgencmd measure_temp`
-3. Use INT8 quantized model
-4. Reduce input resolution if acceptable
-
-### FTP Upload Failures
-
-1. Verify network connectivity: `ping <ftp-server>`
-2. Check credentials in config
-3. Ensure FTP server is accessible from Pi
-4. Check firewall rules
+1. Reduce `f_coreset` (e.g., 0.05 instead of 0.1)
+2. Use smaller input size (e.g., 224x224 instead of 512x512)
+3. For Raspberry Pi, ensure using CPU-optimized PyTorch
 
 ## API Reference
 
 ### Dashboard API
 
 - `GET /api/status` - System status
-- `GET /api/latest` - Latest inspection result
+- `GET /api/latest` - Latest inspection result with image
 - `GET /api/history` - Inspection history
 - `GET /api/stats` - Statistics
 
-### Python API
+### Detection Result Format
 
-```python
-from deployment.automation import QualityControlSystem
-
-# Initialize system
-system = QualityControlSystem('config/config.yaml')
-system.initialize()
-
-# Run single inspection
-result = system.run_single()
-print(result)
-# {'result': 'OK', 'confidence': 0.95, 'processing_time_ms': 150}
-
-# Get status
-status = system.get_status()
+```json
+{
+  "is_normal": true,
+  "anomaly_score": 0.15,
+  "confidence": 0.85,
+  "inference_time_ms": 150,
+  "threshold": 0.5,
+  "image_path": "/path/to/image.jpg"
+}
 ```
 
 ## License

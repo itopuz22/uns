@@ -1,14 +1,11 @@
-# Requirements for Raspberry Pi 5 Deployment
+# Requirements for Raspberry Pi 5 Deployment (PatchCore/FAULTLESS)
 # Note: Some packages should be installed via apt for better performance
 
-# TensorFlow Lite runtime (lightweight, for autoencoder inference)
-tflite-runtime>=2.13.0
-
-# PyTorch for PatchCore (FAULTLESS) - use CPU version for RPi
+# PyTorch for PatchCore - use CPU version for RPi
 # Install with: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 torch>=2.0.0
 torchvision>=0.15.0
-timm>=0.9.0  # PyTorch Image Models (for WideResNet50 backbone)
+timm>=0.9.0  # PyTorch Image Models (WideResNet50 backbone)
 
 # Web dashboard
 Flask>=2.3.0
