@@ -1,6 +1,6 @@
-# Installation Guide
+# Installation Guide (PatchCore/FAULTLESS)
 
-Complete installation instructions for both Windows training environment and Raspberry Pi deployment.
+Complete installation instructions for both Windows training environment and Raspberry Pi deployment using the PatchCore anomaly detection system.
 
 ## Part 1: Windows Training Environment
 
@@ -10,7 +10,7 @@ Complete installation instructions for both Windows training environment and Ras
 - Python 3.9 or later
 - NVIDIA GPU with CUDA support (recommended for faster training)
 - 16GB+ RAM recommended
-- 50GB+ free disk space
+- 20GB+ free disk space
 
 ### Step 1: Install Python
 
@@ -42,17 +42,18 @@ venv\Scripts\activate
 # Upgrade pip
 python -m pip install --upgrade pip
 
-# Install TensorFlow (GPU version if NVIDIA GPU available)
-pip install tensorflow
+# Install PyTorch (GPU version if NVIDIA GPU available)
+# For CUDA 11.8:
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+
+# Or for CUDA 12.1:
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
 # Or for CPU only:
-# pip install tensorflow-cpu
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
 # Install other dependencies
-pip install numpy opencv-python pillow pyyaml scikit-learn matplotlib
-
-# For ONNX export support
-pip install tf2onnx onnx
+pip install timm numpy opencv-python pillow pyyaml scikit-learn matplotlib
 ```
 
 ### Step 4: Copy Project Files
@@ -60,47 +61,94 @@ pip install tf2onnx onnx
 Copy the following directories to your project folder:
 - `config/`
 - `training/`
+- `inference/`
 - `utils/`
+- `test.py`
 
 ### Step 5: Verify Installation
 
 ```cmd
-# Test TensorFlow
-python -c "import tensorflow as tf; print(tf.__version__)"
+# Test PyTorch
+python -c "import torch; print('PyTorch:', torch.__version__)"
 
 # Test GPU availability
-python -c "import tensorflow as tf; print('GPU:', tf.config.list_physical_devices('GPU'))"
+python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None')"
+
+# Test timm (WideResNet50 backbone)
+python -c "import timm; print('timm:', timm.__version__)"
 ```
 
 ### Step 6: Prepare Training Data
 
+PatchCore uses MVTec-style data structure:
+
 ```cmd
 # Create data directory structure
-mkdir data\good
+mkdir Training\product\train\good
+mkdir Training\product\test\good
+mkdir Training\product\test\defect
 
-# Copy "good" product images to data\good\
-# Recommended: 500+ images, JPG format, consistent resolution
+# Copy images:
+# - "Good" training images -> Training\product\train\good\
+# - "Good" test images -> Training\product\test\good\
+# - "Defect" test images -> Training\product\test\defect\
+#
+# Recommended: 100-500 good images for training
+# Use consistent lighting and camera position
 ```
 
 ### Step 7: Train Model
 
 ```cmd
-python -m training.train_autoencoder ^
-    --data_dir data ^
+# Using the dedicated PatchCore training script
+python training/train_patchcore.py ^
+    --class product ^
+    --data Training ^
+    --output models ^
+    --f-coreset 0.1
+
+# Or using the legacy script name (same functionality)
+python training/train_autoencoder.py ^
+    --data_dir Training ^
+    --class_name product ^
     --output_dir models ^
-    --epochs 100 ^
-    --batch_size 32 ^
-    --input_size 224
+    --f_coreset 0.1
 ```
 
-### Step 8: Export Model
+Training parameters:
+- `--f-coreset 0.1`: Keep 10% of feature patches (default, good balance)
+- `--f-coreset 0.25`: Keep 25% for better accuracy (slower inference)
+- `--f-coreset 0.05`: Keep 5% for faster inference (less accurate)
+
+### Step 8: Verify Model
 
 ```cmd
-python -m training.export_model ^
-    --model_dir models ^
-    --output_dir models\exported ^
-    --quantization int8 ^
-    --calibration_dir data
+# Verify model can be loaded
+python training/export_model.py ^
+    --model models/patchcore_product.pth ^
+    --verify
+
+# Get model information
+python training/export_model.py ^
+    --model models/patchcore_product.pth ^
+    --info
+```
+
+Note: PatchCore models are saved as PyTorch .pth files and don't require conversion to TFLite or ONNX. Deploy the .pth file directly.
+
+### Step 9: Test Model
+
+```cmd
+# Test on images
+python test.py ^
+    --model models/patchcore_product.pth ^
+    --test_dir test_images
+
+# Test with heatmap visualization
+python test.py ^
+    --model models/patchcore_product.pth ^
+    --test_dir test_images ^
+    --save_heatmaps
 ```
 
 ---
@@ -110,11 +158,13 @@ python -m training.export_model ^
 ### Hardware Requirements
 
 - Raspberry Pi 5 (8GB recommended)
-- Raspberry Pi AI HAT (Hailo-8L)
-- Raspberry Pi HQ Camera with lens
+- Raspberry Pi HQ Camera with lens (12mm recommended)
 - MicroSD card (32GB+ recommended)
 - Quality power supply (27W USB-C PD)
-- Relay board (3-channel)
+- Relay board (3-channel, optocoupler isolated)
+- Industrial LED lighting
+
+Note: AI HAT is NOT required. PatchCore runs on CPU using PyTorch.
 
 ### Step 1: Install Raspberry Pi OS
 
@@ -138,28 +188,17 @@ sudo reboot
 # Verify with:
 libcamera-hello
 
-# If not working, check cable connection and boot config
+# If not working, check cable connection
+# Add user to video group if needed:
+sudo usermod -aG video $USER
 ```
 
-### Step 4: Install AI HAT Drivers
-
-```bash
-# Install Hailo runtime (follow official instructions)
-# https://www.raspberrypi.com/documentation/accessories/ai-hat.html
-
-# For basic setup:
-sudo apt install hailo-all
-
-# Verify installation
-hailortcli scan
-```
-
-### Step 5: Install Python Dependencies
+### Step 4: Install Python Dependencies
 
 ```bash
 # System packages
 sudo apt install -y python3-pip python3-venv python3-picamera2 \
-    python3-gpiod python3-opencv python3-numpy python3-yaml
+    python3-gpiod python3-yaml
 
 # Create project directory
 mkdir -p ~/qc_system
@@ -169,11 +208,15 @@ cd ~/qc_system
 python3 -m venv venv --system-site-packages
 source venv/bin/activate
 
-# Install additional packages
-pip install flask flask-cors tflite-runtime pillow
+# Install PyTorch (CPU version for Raspberry Pi)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# Install other dependencies
+pip install timm flask flask-cors numpy opencv-python-headless \
+    pillow scikit-learn matplotlib
 ```
 
-### Step 6: Copy Project Files
+### Step 5: Copy Project Files
 
 ```bash
 # Copy from development machine using SCP or SFTP:
@@ -182,26 +225,61 @@ pip install flask flask-cors tflite-runtime pillow
 # - inference/
 # - dashboard/
 # - utils/
-# - models/exported/  (trained model files)
+# - models/patchcore_*.pth  (trained model files)
+# - models/patchcore_*_threshold.json  (threshold files)
 ```
 
-### Step 7: Configure System
+Example using SCP:
+```bash
+# From Windows (in project directory):
+scp -r config inference deployment dashboard utils pi@<raspberry-pi-ip>:~/qc_system/
+scp models/patchcore_*.pth pi@<raspberry-pi-ip>:~/qc_system/models/
+scp models/patchcore_*_threshold.json pi@<raspberry-pi-ip>:~/qc_system/models/
+```
+
+### Step 6: Configure System
 
 Edit `config/config.yaml`:
 
 ```bash
+cd ~/qc_system
 nano config/config.yaml
 ```
 
 Update these settings:
-- Camera resolution (based on inspection requirements)
-- GPIO pin numbers (match your wiring)
-- FTP server credentials
-- Anomaly threshold (from training validation)
+```yaml
+model:
+  paths:
+    patchcore_model: "patchcore_product.pth"
+    patchcore_threshold: "patchcore_product_threshold.json"
+  inference:
+    input_size: [512, 512]
+    use_gpu: false  # Use CPU on Raspberry Pi
+    generate_heatmap: true
 
-### Step 8: Test Components
+camera:
+  resolution:
+    capture_width: 2028
+    capture_height: 1520
+
+gpio:
+  trigger_input:
+    pin: 17
+  relays:
+    k1_ok:
+      pin: 26
+      pulse_duration_ms: 1000
+    k3_nok:
+      pin: 21
+      pulse_duration_ms: 3000
+```
+
+### Step 7: Test Components
 
 ```bash
+cd ~/qc_system
+source venv/bin/activate
+
 # Test camera
 python3 -c "
 from deployment.camera_controller import CameraController
@@ -225,26 +303,39 @@ gpio.pulse_relay('k2', 1000)
 gpio.cleanup()
 "
 
-# Test inference
+# Test PatchCore inference
 python3 -c "
-from inference.anomaly_detector import AnomalyDetector
-detector = AnomalyDetector('models/exported/anomaly_detector.tflite')
-result = detector.detect('/tmp/test_image.jpg')
-print(f'Result: {result}')
+from inference.anomaly_detector import create_detector
+detector = create_detector(
+    model_path='models/patchcore_product.pth',
+    threshold_path='models/patchcore_product_threshold.json',
+    use_gpu=False
+)
+print('Model loaded successfully!')
+print(f'Threshold: {detector.threshold}')
 "
+
+# Test on a sample image
+python3 test.py \
+    --model models/patchcore_product.pth \
+    --test_dir /tmp/test_images \
+    --threshold_file models/patchcore_product_threshold.json
 ```
 
-### Step 9: Run System
+### Step 8: Run System
 
 ```bash
+cd ~/qc_system
+source venv/bin/activate
+
 # Interactive mode (for testing)
-python3 -m deployment.automation --config config/config.yaml
+python3 deployment/automation.py --config config/config.yaml
 
 # Single inspection test
-python3 -m deployment.automation --config config/config.yaml --single
+python3 deployment/automation.py --config config/config.yaml --single
 ```
 
-### Step 10: Setup Systemd Service
+### Step 9: Setup Systemd Service
 
 ```bash
 # Create service file
@@ -254,7 +345,7 @@ sudo nano /etc/systemd/system/qc-system.service
 Add content:
 ```ini
 [Unit]
-Description=Quality Control System
+Description=Quality Control System (PatchCore)
 After=network.target
 
 [Service]
@@ -262,7 +353,7 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/qc_system
 Environment=PATH=/home/pi/qc_system/venv/bin:/usr/bin
-ExecStart=/home/pi/qc_system/venv/bin/python -m deployment.automation --config config/config.yaml
+ExecStart=/home/pi/qc_system/venv/bin/python deployment/automation.py --config config/config.yaml
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -285,7 +376,7 @@ sudo systemctl status qc-system
 sudo journalctl -u qc-system -f
 ```
 
-### Step 11: Dashboard Setup
+### Step 10: Dashboard Setup
 
 The dashboard starts automatically with the main service on port 8080.
 
@@ -294,7 +385,7 @@ Access from any device on the network:
 http://<raspberry-pi-ip>:8080
 ```
 
-### Step 12: Production Hardening
+### Step 11: Production Hardening
 
 ```bash
 # Set up log rotation
@@ -326,23 +417,26 @@ sudo systemctl enable watchdog
 
 ### Training Environment
 - [ ] Python 3.9+ installed
-- [ ] TensorFlow installed and working
+- [ ] PyTorch installed and working
+- [ ] timm library installed
 - [ ] GPU detected (if applicable)
-- [ ] Training data prepared
-- [ ] Model trained successfully
-- [ ] Model exported to TFLite
+- [ ] Training data prepared (MVTec structure)
+- [ ] Model trained successfully (.pth file created)
+- [ ] Threshold file generated (.json)
+- [ ] Model verified with test images
 
 ### Deployment Environment
 - [ ] Raspberry Pi OS 64-bit installed
 - [ ] Camera working (`libcamera-hello`)
-- [ ] AI HAT detected (`hailortcli scan`)
 - [ ] GPIO permissions configured
-- [ ] Model files copied
+- [ ] PyTorch CPU version installed
+- [ ] timm library installed
+- [ ] Model files copied (.pth and threshold.json)
 - [ ] Configuration updated
 - [ ] Component tests passing
 - [ ] Systemd service running
 - [ ] Dashboard accessible
-- [ ] FTP connection working
+- [ ] FTP connection working (if enabled)
 
 ---
 
@@ -351,20 +445,25 @@ sudo systemctl enable watchdog
 ### Training Issues
 
 **"CUDA out of memory"**
-- Reduce batch size: `--batch_size 16`
-- Use smaller input size: `--input_size 160`
+- Reduce coreset fraction: `--f-coreset 0.05`
+- Use smaller batch size: `--batch-size 1`
+- Use smaller image size: `--image-size 224`
 
 **"No GPU found"**
 - Install CUDA and cuDNN
-- Install tensorflow-gpu
+- Install correct PyTorch version for your CUDA: https://pytorch.org/get-started/locally/
 - Check NVIDIA drivers: `nvidia-smi`
+
+**"timm model not found"**
+- Update timm: `pip install --upgrade timm`
+- Check network connection for downloading pre-trained weights
 
 ### Deployment Issues
 
 **"Camera not found"**
 - Check ribbon cable connection
-- Verify camera enabled in raspi-config
-- Try `libcamera-hello --list-cameras`
+- Verify camera with `libcamera-hello --list-cameras`
+- Add user to video group: `sudo usermod -aG video $USER`
 
 **"Permission denied: gpiochip4"**
 - Add user to gpio group: `sudo usermod -aG gpio $USER`
@@ -373,8 +472,18 @@ sudo systemctl enable watchdog
 **"Model file not found"**
 - Verify model path in config
 - Check file permissions: `ls -la models/`
+- Ensure .pth file was copied correctly
 
-**"AI HAT not detected"**
-- Verify HAT is properly seated
-- Check for kernel modules: `lsmod | grep hailo`
-- Update firmware: `sudo rpi-eeprom-update`
+**"Slow inference"**
+- Use smaller coreset fraction model (train with `--f-coreset 0.05`)
+- Reduce input image size in config
+- Ensure using CPU-optimized PyTorch: `pip install torch --index-url https://download.pytorch.org/whl/cpu`
+
+**"Memory error on Raspberry Pi"**
+- Close other applications
+- Use swap: `sudo dphys-swapfile swapoff && sudo nano /etc/dphys-swapfile` (set CONF_SWAPSIZE=2048)
+- Train with smaller coreset fraction
+
+**"Module not found: inference.faultless"**
+- Ensure all project files are copied
+- Check Python path: `export PYTHONPATH=/home/pi/qc_system:$PYTHONPATH`
